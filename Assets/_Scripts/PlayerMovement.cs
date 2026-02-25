@@ -1,11 +1,8 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
-public class PlayerPhysicsController : MonoBehaviour
+public class PlayerMovement : MonoBehaviour
 {
-    [Header("References")]
-    [SerializeField] private Transform cameraTransform;
-
     [Header("Movement")]
     [SerializeField] private float baseMaxSpeed = 8f;
     [SerializeField] private float acceleration = 20f;
@@ -27,11 +24,9 @@ public class PlayerPhysicsController : MonoBehaviour
     [SerializeField] private LayerMask groundLayer;
 
     private Rigidbody rb;
+    private PlayerInput playerInput;
 
-    private Vector3 moveInput;
-    private bool jumpRequested;
     private bool isGrounded;
-
     private float speedMultiplier = 1f;
     private float speedBoostTimer = 0f;
 
@@ -40,28 +35,24 @@ public class PlayerPhysicsController : MonoBehaviour
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
+        playerInput = GetComponent<PlayerInput>();
+
         rb.freezeRotation = true;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
     }
 
-    private void Update()
-    {
-        ReadInput();
-    }
-
     private void FixedUpdate()
     {
-        UpdateSpeedBoostTimer();
+        UpdateSpeedBoost();
         CheckGround();
         ApplyDrag();
         HandleMovement();
         HandleRotation();
         HandleJump();
         ApplyExtraGravity();
-
-        jumpRequested = false;
     }
 
+    // Публичный метод для активации ускорителя (вызывается из Collectible)
     public void ApplySpeedBoost(float multiplier, float duration)
     {
         if (multiplier <= 0f || duration <= 0f)
@@ -71,13 +62,12 @@ public class PlayerPhysicsController : MonoBehaviour
         speedBoostTimer = duration;
     }
 
-    private void UpdateSpeedBoostTimer()
+    private void UpdateSpeedBoost()
     {
         if (speedBoostTimer <= 0f)
             return;
 
         speedBoostTimer -= Time.fixedDeltaTime;
-
         if (speedBoostTimer <= 0f)
         {
             speedMultiplier = 1f;
@@ -85,20 +75,20 @@ public class PlayerPhysicsController : MonoBehaviour
         }
     }
 
-    private void ReadInput()
+    private void CheckGround()
     {
-        float h = Input.GetAxisRaw("Horizontal");
-        float v = Input.GetAxisRaw("Vertical");
+        Vector3 origin = transform.position + Vector3.up * 0.1f;
+        isGrounded = Physics.SphereCast(origin, groundCheckRadius, Vector3.down, out _, groundCheckDistance, groundLayer);
+    }
 
-        moveInput = new Vector3(h, 0f, v).normalized;
-
-        if (Input.GetButtonDown("Jump"))
-            jumpRequested = true;
+    private void ApplyDrag()
+    {
+        rb.drag = isGrounded ? groundDrag : airDrag;
     }
 
     private void HandleMovement()
     {
-        Vector3 desiredDirection = GetCameraRelativeDirection();
+        Vector3 desiredDirection = playerInput.MoveDirection;
         Vector3 horizontalVelocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
 
         float accel = isGrounded ? acceleration : airAcceleration;
@@ -110,12 +100,7 @@ public class PlayerPhysicsController : MonoBehaviour
         Vector3 targetVelocity = desiredDirection * CurrentMaxSpeed;
         Vector3 velocityChange = targetVelocity - horizontalVelocity;
 
-        // Ограничение прироста скорости
-        Vector3 accelerationForce = Vector3.ClampMagnitude(
-            velocityChange / Time.fixedDeltaTime,
-            accel
-        );
-
+        Vector3 accelerationForce = Vector3.ClampMagnitude(velocityChange / Time.fixedDeltaTime, accel);
         rb.AddForce(accelerationForce, ForceMode.Acceleration);
 
         ClampHorizontalSpeed();
@@ -124,7 +109,6 @@ public class PlayerPhysicsController : MonoBehaviour
     private void ClampHorizontalSpeed()
     {
         Vector3 horizontal = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-
         if (horizontal.magnitude > CurrentMaxSpeed)
         {
             Vector3 limited = horizontal.normalized * CurrentMaxSpeed;
@@ -134,31 +118,25 @@ public class PlayerPhysicsController : MonoBehaviour
 
     private void HandleRotation()
     {
-        Vector3 direction = GetCameraRelativeDirection();
-
+        Vector3 direction = playerInput.MoveDirection;
         if (direction.sqrMagnitude < 0.01f)
             return;
 
         Quaternion targetRotation = Quaternion.LookRotation(direction);
-        Quaternion smoothRotation = Quaternion.Slerp(
-            rb.rotation,
-            targetRotation,
-            rotationSpeed * Time.fixedDeltaTime
-        );
-
+        Quaternion smoothRotation = Quaternion.Slerp(rb.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
         rb.MoveRotation(smoothRotation);
     }
 
     private void HandleJump()
     {
-        if (!jumpRequested || !isGrounded)
-            return;
+        if (playerInput.ConsumeJump() && isGrounded)
+        {
+            Vector3 velocity = rb.velocity;
+            velocity.y = 0f;
+            rb.velocity = velocity;
 
-        Vector3 velocity = rb.velocity;
-        velocity.y = 0f;
-        rb.velocity = velocity;
-
-        rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+        }
     }
 
     private void ApplyExtraGravity()
@@ -168,46 +146,7 @@ public class PlayerPhysicsController : MonoBehaviour
 
         if (rb.velocity.y < 0f)
         {
-            rb.AddForce(
-                Vector3.up * Physics.gravity.y * (extraGravityMultiplier - 1f),
-                ForceMode.Acceleration
-            );
+            rb.AddForce(Vector3.up * Physics.gravity.y * (extraGravityMultiplier - 1f), ForceMode.Acceleration);
         }
-    }
-
-    private void ApplyDrag()
-    {
-        rb.drag = isGrounded ? groundDrag : airDrag;
-    }
-
-    private Vector3 GetCameraRelativeDirection()
-    {
-        if (cameraTransform == null)
-            return Vector3.zero;
-
-        Vector3 camForward = cameraTransform.forward;
-        Vector3 camRight = cameraTransform.right;
-
-        camForward.y = 0f;
-        camRight.y = 0f;
-
-        camForward.Normalize();
-        camRight.Normalize();
-
-        return (camForward * moveInput.z + camRight * moveInput.x).normalized;
-    }
-
-    private void CheckGround()
-    {
-        Vector3 origin = transform.position + Vector3.up * 0.1f;
-
-        isGrounded = Physics.SphereCast(
-            origin,
-            groundCheckRadius,
-            Vector3.down,
-            out _,
-            groundCheckDistance,
-            groundLayer
-        );
     }
 }

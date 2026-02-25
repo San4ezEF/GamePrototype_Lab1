@@ -1,10 +1,5 @@
 using UnityEngine;
 
-/// <summary>
-/// Универсальный подбираемый объект:
-/// - Монета
-/// - Усилитель скорости
-/// </summary>
 public class Collectible : MonoBehaviour
 {
     public enum CollectibleType
@@ -56,10 +51,10 @@ public class Collectible : MonoBehaviour
 
     private void HandleSpeedBoost(Collider playerCollider)
     {
-        PlayerPhysicsController controller =
-            playerCollider.GetComponent<PlayerPhysicsController>();
+        PlayerMovement controller = playerCollider.GetComponent<PlayerMovement>();
 
         if (controller != null)
             controller.ApplySpeedBoost(speedMultiplier, boostDuration);
     }
 }
+    

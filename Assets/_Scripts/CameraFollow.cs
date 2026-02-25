@@ -1,8 +1,6 @@
 using UnityEngine;
 
-/// <summary>
-/// Орбитальная камера с коллизией.
-/// </summary>
+
 public class CameraFollow : MonoBehaviour
 {
     [Header("Target")]

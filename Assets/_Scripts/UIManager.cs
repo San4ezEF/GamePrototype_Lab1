@@ -2,12 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Управляет пользовательским интерфейсом:
-/// - Счёт
-/// - Позиция игрока
-/// - Скорость игрока
-/// </summary>
+
 public class UIManager : MonoBehaviour
 {
     [Header("UI Elements")]
